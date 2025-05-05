@@ -135,7 +135,7 @@ CURRENT_LOD表示算法执行的当前LOD。
 7. 将当前CURRENT_LOD减1，互换ConsumeNodeList和AppendNodeList，回到2执行下一个Pass
 kernal代码如下：
 
-``` 
+``` c#
 //计算Node的包围盒，从MinMaxHeightMap拿到高度数据
 void CalNodeBound(GlobalValue gvalue, inout NodePatchStruct nodeStruct)
 {
@@ -240,7 +240,7 @@ for (int i = TerrainDataManager.MIN_LOD; i >= 0; i--)
 4.2章节中**NodeBrunchList**记录了每个LOD级别的Node是否被进一步细分。只有值为2的Node，表示是不需要被细分的Node，才是最终提交给后续流程的有效Node，其他节点都是无效Node。
 
 生成**SectorLODMap**的算法如下，本质上就是在一颗完全四查树中，按层数从上至下，找到第一个值为2的父Node，并记录这个父Node的LOD值。
-``` 
+``` C#
 [numthreads(8, 8, 1)]
 void CreateSectorLodMap(uint3 id : SV_DispatchThreadID)
 {
@@ -846,4 +846,9 @@ inline void FixLODConnectSeam(inout float4 vertex, uint2 PatchXYInNode, uint Nod
 
 
 
+# 我把三角洲地形渲染的优化也放到这个项目里了
+
+**做法**：每个像素存两个权重最大的纹理ID和权重。在实际渲染时，根据当前像素，右方像素和右下角像素，三个值计算出重心坐标，再把这三个像素的每个纹理（一共6张）计算出权重，最后进行综合的混合。
+
+**优势**：用16bit就可以存储一个像素的信息了。纹理id占（3-5bit，权重占6bit，因为只存两张纹理，索引存一个纹理权重就行，另一个是1-它）。
 
