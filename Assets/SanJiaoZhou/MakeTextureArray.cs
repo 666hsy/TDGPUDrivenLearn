@@ -75,11 +75,14 @@ public class MakeTextureArray : MonoBehaviour
         normalArray = new Texture2DArray(firstLayer.normalMapTexture.width, firstLayer.normalMapTexture.height,
             TotalArrayLength, firstLayer.normalMapTexture.format, true, true);
         for (var i = 0; i < layers.Length; i++)
-        for (var m = 0; m < layers[i].diffuseTexture.mipmapCount; m++)
         {
-            Graphics.CopyTexture(layers[i].diffuseTexture, 0, m, albedoArray, i, m);
-            Graphics.CopyTexture(layers[i].normalMapTexture, 0, m, normalArray, i, m);
+            for (var m = 0; m < layers[i].diffuseTexture.mipmapCount; m++)
+            {
+                Graphics.CopyTexture(layers[i].diffuseTexture, 0, m, albedoArray, i, m);
+                Graphics.CopyTexture(layers[i].normalMapTexture, 0, m, normalArray, i, m);
+            }
         }
+            
 
         Shader.SetGlobalTexture(AlbedoArrayShaderId, albedoArray);
         Shader.SetGlobalTexture(NormalArrayShaderId, normalArray);
@@ -100,53 +103,54 @@ public class MakeTextureArray : MonoBehaviour
         };
 
         var tileIndex = new int2[width * height]; //记录每个像素处权重最大的两张tex的Id
-        var weights = new LayerWeight[splatCount];
+        var weights = new LayerWeight[splatCount];  //这算是个临时变量，每次只记录一个像素的8个信息
         var weightVal = new int[width * height];
 
         for (var i = 0; i < width; i++)
-        for (var j = 0; j < height; j++)
         {
-            for (var k = 0; k < splatCount; k++)
+            for (var j = 0; j < height; j++)
             {
-                weights[k].weight = maps[i, j, k];
-                weights[k].index = k;
-            }
-
-            Array.Sort(weights, (a, b) => { return -a.weight.CompareTo(b.weight); });
-            var tw = 0f;
-            var blendCount = 2;
-            for (var k = 0; k < blendCount; k++)
-                tw += weights[k].weight;
-            if (tw == 0)
-            {
-                tw = 1;
-                weights[0].weight = 1;
-            }
-            else
-            {
+                for (var k = 0; k < splatCount; k++)
+                {
+                    weights[k].weight = maps[i, j, k];
+                    weights[k].index = k;
+                }
+                Array.Sort(weights, (a, b) => { return -a.weight.CompareTo(b.weight); });
+                var tw = 0f;
+                var blendCount = 2;
                 for (var k = 0; k < blendCount; k++)
-                    weights[k].weight /= tw; //只考虑权重最大的两层，权重归一化
+                    tw += weights[k].weight;
+                if (tw == 0)
+                {
+                    tw = 1;
+                    weights[0].weight = 1;
+                }
+                else
+                {
+                    for (var k = 0; k < blendCount; k++)
+                        weights[k].weight /= tw; //只考虑权重最大的两层，权重归一化
+                }
+
+                if (weights[1].weight == 0)
+                    weights[1].index = weights[0].index;
+
+                tileIndex[i * height + j] = new int2(weights[0].index, weights[1].index);
+                var weightDiff = Mathf.Clamp(weights[0].weight - weights[1].weight, 0, 0.999999f);
+                weightVal[i * height + j] = Mathf.FloorToInt(64f * weightDiff); //把权重差值映射到0-64之间，可以用 6bit 来表示
             }
-
-            if (weights[1].weight == 0)
-                weights[1].index = weights[0].index;
-
-            tileIndex[i * height + j] = new int2(weights[0].index, weights[1].index);
-            var weightDiff = Mathf.Clamp(weights[0].weight - weights[1].weight, 0, 0.999999f);
-            weightVal[i * height + j] = Mathf.FloorToInt(64f * weightDiff); //把权重差值映射到0-64之间，可以用 6bit 来表示
         }
+        
 
-        //保存主纹理的索引+次纹理的索引+权重插值
-        var texByte = new ushort[width * height];
+        //保存主纹理的索引+次纹理的索引+权重插值  5+5+6
+        var texByte = new ushort[width * height];   //两个字节，16位
         for (var i = 0; i < tileIndex.Length; i++)
             texByte[i] = (ushort)(weightVal[i] + (tileIndex[i].y << 6) + (tileIndex[i].x << 11));
 
-        var texBytes = new byte[texByte.Length * 2];
+        var texBytes = new byte[texByte.Length * 2];    //1个字节，8位
         Buffer.BlockCopy(texByte, 0, texBytes, 0, texByte.Length * 2);
         blendTex.LoadRawTextureData(texBytes);
         blendTex.Apply(false, false);
         ter.materialTemplate.SetTexture(TexArraryBlendShaderId, blendTex);
-        // transform.GetComponent<MeshRenderer>().sharedMaterial.SetTexture(TexArraryBlendShaderId, blendTex);
         Shader.SetGlobalVector(AlphaMapSize, new Vector4(width, 1.0f / width, 0, 0));
 
         Shader.SetGlobalFloat(_HeightBlendEndShaderId, HeightBlendEnd);
